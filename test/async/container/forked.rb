@@ -9,6 +9,7 @@ require "async/container/forked"
 require "async/container/a_container"
 require "sus/fixtures/async/scheduler_context"
 require "weakref"
+require "timeout"
 
 describe Async::Container::Forked do
 	include Sus::Fixtures::Async::SchedulerContext
@@ -28,6 +29,21 @@ describe Async::Container::Forked do
 	end
 	
 	it_behaves_like Async::Container::AContainer
+	
+	with "#wait_until_ready" do
+		let(:container) {subject.new(health_check_interval: 0.05)}
+		
+		it "enforces startup_timeout while waiting" do
+			container.spawn(startup_timeout: 0.2){|instance| instance.ready!; sleep}
+			container.spawn(startup_timeout: 0.2){|instance| sleep}
+			
+			Timeout.timeout(5){container.wait_until_ready}
+			
+			expect(container.size).to be == 1
+		ensure
+			container.stop(false)
+		end
+	end
 	
 	it "forks with a clean child fiber stack" do
 		input, output = IO.pipe
