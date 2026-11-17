@@ -29,6 +29,28 @@ describe Async::Container::Forked do
 	
 	it_behaves_like Async::Container::AContainer
 	
+	with Async::Container::Forked::Child::Instance do
+		it "leaves the notify pipe for the kernel to close when the process exits" do
+			input, output = IO.pipe
+			descriptor = output.fileno
+			
+			Async::Container::Forked::Child::Instance.new(output)
+			
+			expect(output).not.to be(:autoclose?)
+			
+			# Closing the IO, as Ruby does early during exit, leaves the pipe itself open:
+			output.close
+			expect(input.read_nonblock(1, exception: false)).to be == :wait_readable
+			
+			# The descriptor is still valid, and is ours to close:
+			writer = IO.for_fd(descriptor)
+		ensure
+			input&.close
+			output&.close
+			writer&.close
+		end
+	end
+	
 	it "forks with a clean child fiber stack" do
 		input, output = IO.pipe
 		marker = Object.new
