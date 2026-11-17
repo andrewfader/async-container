@@ -63,6 +63,54 @@ describe Async::Container::Group do
 		end
 	end
 	
+	with "#wait_until" do
+		it "returns the result of the block once no children remain" do
+			expect(group.wait_until{true}).to be == true
+			expect(group.wait_until{false}).to be == false
+		end
+		
+		it "returns true once the block is true while a child is still running" do
+			channel = Async::Container::Channel.new
+			messages = []
+			
+			fiber = Fiber.new do
+				group.wait_for(channel){|message| messages << message}
+			end
+			
+			fiber.resume
+			
+			channel.out.puts(JSON.generate(status: "starting"))
+			channel.out.puts(JSON.generate(ready: true))
+			
+			expect(group.wait_until{messages.size == 2}).to be == true
+			
+			expect(messages).to be == [{status: "starting"}, {ready: true}]
+			expect(group).to be(:running?)
+		ensure
+			channel&.close
+		end
+		
+		it "returns false if no children remain before the block is true" do
+			channel = Async::Container::Channel.new
+			
+			fiber = Fiber.new do
+				Fiber.yield
+				group.running.delete(channel.in)
+			end
+			
+			fiber.resume
+			group.running[channel.in] = fiber
+			
+			# The child exits, without the block ever becoming true:
+			channel.close_write
+			
+			expect(group.wait_until{false}).to be == false
+			expect(group).to be(:empty?)
+		ensure
+			channel&.close_read
+		end
+	end
+	
 	with "#empty?" do
 		it "returns true for empty group" do
 			expect(group).to be(:empty?)
